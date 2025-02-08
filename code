@@ -1,0 +1,200 @@
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.IO;
+using iTextSharp.text;
+using iTextSharp.text.pdf;
+
+namespace InstrumentCalibration
+{
+    class Program
+    {
+        // Database connection string (REPLACE WITH YOUR CREDENTIALS)
+        static string connectionString = "Server=your_server_address;Database=your_database_name;User Id=your_username;Password=your_password;";
+
+        static void Main(string[] args)
+        {
+            while (true)
+            {
+                Console.WriteLine("\nInstrument Calibration Management");
+                Console.WriteLine("1. Create Instrument");
+                Console.WriteLine("2. Log Calibration");
+                Console.WriteLine("3. Print Record to PDF");
+                Console.WriteLine("4. Exit");
+
+                Console.Write("Enter your choice: ");
+                string choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        CreateInstrument();
+                        break;
+                    case "2":
+                        LogCalibration();
+                        break;
+                    case "3":
+                        PrintRecordToPdf();
+                        break;
+                    case "4":
+                        return;
+                    default:
+                        Console.WriteLine("Invalid choice. Please try again.");
+                        break;
+                }
+            }
+        }
+
+        static void CreateInstrument()
+        {
+            Console.Write("Enter instrument name: ");
+            string instrumentName = Console.ReadLine();
+            Console.Write("Enter instrument type: ");
+            string instrumentType = Console.ReadLine();
+            Console.Write("Enter manufacturer: ");
+            string manufacturer = Console.ReadLine();
+            Console.Write("Enter model: ");
+            string model = Console.ReadLine();
+            Console.Write("Enter serial number: ");
+            string serialNumber = Console.ReadLine();
+            Console.Write("Enter range: ");
+            string range = Console.ReadLine();
+
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                string query = "INSERT INTO Instruments (InstrumentName, InstrumentType, Manufacturer, Model, SerialNumber, Range) VALUES (@InstrumentName, @InstrumentType, @Manufacturer, @Model, @SerialNumber, @Range)";
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@InstrumentName", instrumentName);
+                    command.Parameters.AddWithValue("@InstrumentType", instrumentType);
+                    command.Parameters.AddWithValue("@Manufacturer", manufacturer);
+                    command.Parameters.AddWithValue("@Model", model);
+                    command.Parameters.AddWithValue("@SerialNumber", serialNumber);
+                    command.Parameters.AddWithValue("@Range", range);
+
+                    try
+                    {
+                        command.ExecuteNonQuery();
+                        Console.WriteLine("Instrument created successfully!");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Error creating instrument: " + ex.Message);
+                    }
+                }
+            }
+        }
+
+        static void LogCalibration()
+        {
+            Console.Write("Enter Instrument ID: "); // You'll need to provide a way to get the ID
+            int instrumentId = int.Parse(Console.ReadLine()); // Handle parsing errors
+
+            Console.Write("Enter calibration date (YYYY-MM-DD): ");
+            DateTime calibrationDate = DateTime.Parse(Console.ReadLine()); // Handle parsing errors
+
+            List<double> mAValues = new List<double>();
+            List<double> voltageValues = new List<double>();
+
+            Console.WriteLine("Enter mA values (4 entries):");
+            for (int i = 0; i < 4; i++)
+            {
+                mAValues.Add(double.Parse(Console.ReadLine())); // Handle parsing errors
+            }
+
+            Console.WriteLine("Enter voltage values (4 entries):");
+            for (int i = 0; i < 4; i++)
+            {
+                voltageValues.Add(double.Parse(Console.ReadLine())); // Handle parsing errors
+            }
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                string query = "INSERT INTO Calibrations (InstrumentID, CalibrationDate, mA1, mA2, mA3, mA4, V1, V2, V3, V4) VALUES (@InstrumentID, @CalibrationDate, @mA1, @mA2, @mA3, @mA4, @V1, @V2, @V3, @V4)";
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@InstrumentID", instrumentId);
+                    command.Parameters.AddWithValue("@CalibrationDate", calibrationDate);
+                    command.Parameters.AddWithValue("@mA1", mAValues[0]);
+                    command.Parameters.AddWithValue("@mA2", mAValues[1]);
+                    command.Parameters.AddWithValue("@mA3", mAValues[2]);
+                    command.Parameters.AddWithValue("@mA4", mAValues[3]);
+                    command.Parameters.AddWithValue("@V1", voltageValues[0]);
+                    command.Parameters.AddWithValue("@V2", voltageValues[1]);
+                    command.Parameters.AddWithValue("@V3", voltageValues[2]);
+                    command.Parameters.AddWithValue("@V4", voltageValues[3]);
+
+
+                    try
+                    {
+                        command.ExecuteNonQuery();
+                        Console.WriteLine("Calibration logged successfully!");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Error logging calibration: " + ex.Message);
+                    }
+                }
+            }
+        }
+
+
+        static void PrintRecordToPdf()
+        {
+            Console.Write("Enter Instrument ID: ");
+            int instrumentId = int.Parse(Console.ReadLine());
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                string query = @"SELECT i.InstrumentName, i.InstrumentType, i.Manufacturer, i.Model, i.SerialNumber, i.Range, c.CalibrationDate, c.mA1, c.mA2, c.mA3, c.mA4, c.V1, c.V2, c.V3, c.V4
+                                FROM Instruments i
+                                INNER JOIN Calibrations c ON i.InstrumentID = c.InstrumentID
+                                WHERE i.InstrumentID = @InstrumentID
+                                ORDER BY c.CalibrationDate DESC"; // Order by latest calibration date
+
+                using (SqlCommand command = new SqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@InstrumentID", instrumentId);
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        if (reader.Read()) // Check if any records were found
+                        {
+                            Document doc = new Document();
+                            PdfWriter.GetInstance(doc, new FileStream($"calibration_record_{instrumentId}.pdf", FileMode.Create));
+                            doc.Open();
+
+                            // Add instrument information
+                            doc.Add(new Paragraph($"Instrument Name: {reader["InstrumentName"]}"));
+                            doc.Add(new Paragraph($"Instrument Type: {reader["InstrumentType"]}"));
+                            doc.Add(new Paragraph($"Manufacturer: {reader["Manufacturer"]}"));
+                            doc.Add(new Paragraph($"Model: {reader["Model"]}"));
+                            doc.Add(new Paragraph($"Serial Number: {reader["SerialNumber"]}"));
+                            doc.Add(new Paragraph($"Range: {reader["Range"]}"));
+                            doc.Add(new Paragraph("------------------------------------"));
+
+
+                            // Add calibration data
+                            doc.Add(new Paragraph($"Calibration Date: {reader["CalibrationDate"]}"));
+                            doc.Add(new Paragraph($"mA Values: {reader["mA1"]}, {reader["mA2"]}, {reader["mA3"]}, {reader["mA4"]}"));
+                            doc.Add(new Paragraph($"Voltage Values: {reader["V1"]}, {reader["V2"]}, {reader["V3"]}, {reader["V4"]}"));
+                            doc.Add(new Paragraph("------------------------------------"));
+
+
+
+                            doc.Close();
+                            Console.WriteLine($"Calibration record saved to calibration_record_{instrumentId}.pdf");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No calibration records found for this instrument.");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
